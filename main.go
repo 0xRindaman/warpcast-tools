@@ -1,564 +1,496 @@
 package main
 
 import (
-	"encoding/json"
-	"fmt"
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/tokinaa/warpcast-tools/degen"
-	"github.com/tokinaa/warpcast-tools/warpcast"
-	"math/rand"
-	"os"
-	"strconv"
-	"strings"
-	"time"
+    "encoding/json"
+    "fmt"
+    "math/rand"
+    "os"
+    "strconv"
+    "strings"
+    "time"
+
+    "github.com/AlecAivazis/survey/v2"
+    "github.com/tokinaa/warpcast-tools/warpcast"
 )
 
 type ConfigStruct struct {
-	Accounts          []string `json:"accounts"`
-	DelayFollow       int      `json:"delayFollow"`
-	DelayUnfollow     int      `json:"delayUnfollow"`
-	DelayLike         int      `json:"delayLike"`
-	DelayComment      int      `json:"delayComment"`
-	DelayRecast       int      `json:"delayRecast"`
-	DelayTimeline     int      `json:"delayTimeline"`
-	CustomCommentText []string `json:"customCommentText"`
-	IgnoreUsers       []string `json:"ignoreUsers"`
+    Accounts          []string `json:"accounts"`
+    DelayFollow       int      `json:"delayFollow"`
+    DelayUnfollow     int      `json:"delayUnfollow"`
+    DelayLike         int      `json:"delayLike"`
+    DelayComment      int      `json:"delayComment"`
+    DelayRecast       int      `json:"delayRecast"`
+    DelayTimeline     int      `json:"delayTimeline"`
+    CustomCommentText string   `json:"customCommentText"`
+    IgnoreUsers       []string `json:"ignoreUsers"`
+}
+
+type Quote struct {
+    Text   string `json:"text"`
+    Author string `json:"author"`
 }
 
 var (
-	myConfig = LoadConfig()
+    myConfig = LoadConfig()
 )
 
 func LoadConfig() ConfigStruct {
-	// Load from config.json
-	openFile, err := os.Open("config.json")
-	if err != nil {
-		return ConfigStruct{}
-	}
+    openFile, err := os.Open("config.json")
+    if err != nil {
+        return ConfigStruct{}
+    }
+    defer openFile.Close()
 
-	defer openFile.Close()
+    var config ConfigStruct
+    jsonParser := json.NewDecoder(openFile)
+    jsonParser.Decode(&config)
 
-	var config ConfigStruct
-	jsonParser := json.NewDecoder(openFile)
-	jsonParser.Decode(&config)
-
-	return config
+    return config
 }
 
 func init() {
-	if _, err := os.Stat("config.json"); os.IsNotExist(err) {
-		file, _ := json.MarshalIndent(ConfigStruct{
-			Accounts:          []string{},
-			DelayFollow:       1000,
-			DelayUnfollow:     1000,
-			DelayLike:         1000,
-			DelayComment:      1000,
-			DelayRecast:       1000,
-			DelayTimeline:     1000,
-			CustomCommentText: []string{},
-			IgnoreUsers:       []string{},
-		}, "", " ")
-		_ = os.WriteFile("config.json", file, 0644)
-	}
-	openLoadConfig := LoadConfig()
-	myConfig = openLoadConfig
+    if _, err := os.Stat("config.json"); os.IsNotExist(err) {
+        file, _ := json.MarshalIndent(ConfigStruct{
+            Accounts:          []string{},
+            DelayFollow:       1000,
+            DelayUnfollow:     1000,
+            DelayLike:         1000,
+            DelayComment:      1000,
+            DelayRecast:       1000,
+            DelayTimeline:     1000,
+            CustomCommentText: "quotes-en.json",
+            IgnoreUsers:       []string{},
+        }, "", " ")
+        _ = os.WriteFile("config.json", file, 0644)
+    }
+    openLoadConfig := LoadConfig()
+    myConfig = openLoadConfig
+}
+
+func loadQuotes(filename string) ([]string, error) {
+    quotesFile, err := os.Open(filename)
+    if err != nil {
+        return nil, err
+    }
+    defer quotesFile.Close()
+
+    var quotes []Quote
+    jsonParser := json.NewDecoder(quotesFile)
+    err = jsonParser.Decode(&quotes)
+    if err != nil {
+        return nil, err
+    }
+
+    var quoteTexts []string
+    for _, quote := range quotes {
+        quoteTexts = append(quoteTexts, quote.Text)
+    }
+
+    return quoteTexts, nil
 }
 
 func checkingError(err error) {
-	if err != nil {
-		switch {
-		case err.Error() == "interrupt":
-			os.Exit(0)
-		default:
-			break
-		}
-	}
+    if err != nil {
+        switch {
+        case err.Error() == "interrupt":
+            os.Exit(0)
+        default:
+            break
+        }
+    }
 }
 
 func showPressEnter() {
-	fmt.Print("Press Enter to Back...")
-
-	var input string
-	fmt.Scanln(&input)
+    fmt.Print("Press Enter to Back...")
+    var input string
+    fmt.Scanln(&input)
 }
 
 func multiAccountsManagement() {
-	fmt.Print("\033[H\033[2J")
-	fmt.Println("Multi Accounts Management")
-	fmt.Println("Total Accounts :", len(myConfig.Accounts))
-	fmt.Println()
-	fmt.Println("1. List Account")
-	fmt.Println("2. Add Account")
-	fmt.Println("3. Remove Accounts")
-	fmt.Println("4. Back")
-	fmt.Println()
+    fmt.Print("\033[H\033[2J")
+    fmt.Println("Multi Accounts Management")
+    fmt.Println("Total Accounts :", len(myConfig.Accounts))
+    fmt.Println()
+    fmt.Println("1. List Account")
+    fmt.Println("2. Add Account")
+    fmt.Println("3. Remove Accounts")
+    fmt.Println("4. Back")
+    fmt.Println()
 
-	inputMenu := ""
-	inputMenuError := survey.AskOne(&survey.Input{
-		Message: "Select Menu:",
-	}, &inputMenu, survey.WithValidator(survey.Required))
+    inputMenu := ""
+    inputMenuError := survey.AskOne(&survey.Input{
+        Message: "Select Menu:",
+    }, &inputMenu, survey.WithValidator(survey.Required))
 
-	checkingError(inputMenuError)
+    checkingError(inputMenuError)
 
-	switch inputMenu {
-	case "1":
-		fmt.Print("\033[H\033[2J")
-		fmt.Println("List Account")
-		fmt.Println()
-		for i, account := range myConfig.Accounts {
-			fmt.Println(i+1, account)
-		}
-		fmt.Println()
-
-		showPressEnter()
-
-		fmt.Print("\033[H\033[2J")
-		multiAccountsManagement()
-		break
-	case "2":
-		fmt.Print("\033[H\033[2J")
-		fmt.Println("Add Account")
-		fmt.Println()
-
-		inputAccount := ""
-		inputAccountError := survey.AskOne(&survey.Input{
-			Message: "Authorization Token:",
-		}, &inputAccount, survey.WithValidator(survey.Required))
-
-		checkingError(inputAccountError)
-
-		myConfig.Accounts = append(myConfig.Accounts, inputAccount)
-
-		file, _ := json.MarshalIndent(myConfig, "", " ")
-		_ = os.WriteFile("config.json", file, 0644)
-
-		fmt.Println("Account Added")
-		fmt.Println()
-
-		showPressEnter()
-
-		fmt.Print("\033[H\033[2J")
-		multiAccountsManagement()
-		break
-	case "3":
-		fmt.Print("\033[H\033[2J")
-		fmt.Println("Remove Accounts")
-		fmt.Println()
-
-		for i, account := range myConfig.Accounts {
-			fmt.Println(i+1, account)
-		}
-
-		fmt.Println()
-
-		inputAccount := 0
-		inputAccountError := survey.AskOne(&survey.Select{
-			Message: "Select Account:",
-			Options: myConfig.Accounts,
-		}, &inputAccount, survey.WithValidator(survey.Required))
-
-		checkingError(inputAccountError)
-
-		myConfig.Accounts = append(myConfig.Accounts[:inputAccount], myConfig.Accounts[inputAccount+1:]...)
-
-		file, _ := json.MarshalIndent(myConfig, "", " ")
-		_ = os.WriteFile("config.json", file, 0644)
-
-		fmt.Println("Account Removed")
-		fmt.Println()
-
-		showPressEnter()
-
-		fmt.Print("\033[H\033[2J")
-		multiAccountsManagement()
-		break
-	case "4":
-		fmt.Print("\033[H\033[2J")
-		main()
-		break
-	}
+    switch inputMenu {
+    case "1":
+        fmt.Print("\033[H\033[2J")
+        fmt.Println("List Account")
+        fmt.Println()
+        for i, account := range myConfig.Accounts {
+            fmt.Println(i+1, account)
+        }
+        fmt.Println()
+        showPressEnter()
+        fmt.Print("\033[H\033[2J")
+        multiAccountsManagement()
+    case "2":
+        fmt.Print("\033[H\033[2J")
+        fmt.Println("Add Account")
+        fmt.Println()
+        inputAccount := ""
+        inputAccountError := survey.AskOne(&survey.Input{
+            Message: "Authorization Token:",
+        }, &inputAccount, survey.WithValidator(survey.Required))
+        checkingError(inputAccountError)
+        myConfig.Accounts = append(myConfig.Accounts, inputAccount)
+        file, _ := json.MarshalIndent(myConfig, "", " ")
+        _ = os.WriteFile("config.json", file, 0644)
+        fmt.Println("Account Added")
+        fmt.Println()
+        showPressEnter()
+        fmt.Print("\033[H\033[2J")
+        multiAccountsManagement()
+    case "3":
+        fmt.Print("\033[H\033[2J")
+        fmt.Println("Remove Accounts")
+        fmt.Println()
+        for i, account := range myConfig.Accounts {
+            fmt.Println(i+1, account)
+        }
+        fmt.Println()
+        inputAccount := 0
+        inputAccountError := survey.AskOne(&survey.Select{
+            Message: "Select Account:",
+            Options: myConfig.Accounts,
+        }, &inputAccount, survey.WithValidator(survey.Required))
+        checkingError(inputAccountError)
+        myConfig.Accounts = append(myConfig.Accounts[:inputAccount], myConfig.Accounts[inputAccount+1:]...)
+        file, _ := json.MarshalIndent(myConfig, "", " ")
+        _ = os.WriteFile("config.json", file, 0644)
+        fmt.Println("Account Removed")
+        fmt.Println()
+        showPressEnter()
+        fmt.Print("\033[H\033[2J")
+        multiAccountsManagement()
+    case "4":
+        fmt.Print("\033[H\033[2J")
+        main()
+    }
 }
 
 func autoTimeline() {
-	fmt.Print("\033[H\033[2J")
+    fmt.Print("\033[H\033[2J")
+    fmt.Println("Auto Like, Comment, and Recast Timeline")
+    fmt.Println()
 
-	fmt.Println("Auto Like, Comment, and Recast Timeline")
-	fmt.Println()
+    inputSelectAccount := 0
+    inputSelectAccountError := survey.AskOne(&survey.Select{
+        Message: "Select Account:",
+        Options: myConfig.Accounts,
+    }, &inputSelectAccount, survey.WithValidator(survey.Required))
+    checkingError(inputSelectAccountError)
 
-	inputSelectAccount := 0
-	inputSelectAccountError := survey.AskOne(&survey.Select{
-		Message: "Select Account:",
-		Options: myConfig.Accounts,
-	}, &inputSelectAccount, survey.WithValidator(survey.Required))
+    inputSelectMode := []string{}
+    inputSelectModeError := survey.AskOne(&survey.MultiSelect{
+        Message: "Select Mode:",
+        Options: []string{"Like", "Comments", "Recast"},
+    }, &inputSelectMode, survey.WithValidator(survey.Required))
+    checkingError(inputSelectModeError)
 
-	checkingError(inputSelectAccountError)
+    inputChoiceTimeline := ""
+    inputChoiceTimelineError := survey.AskOne(&survey.Select{
+        Message: "Select Timeline:",
+        Options: []string{"Home", "All-Channels"},
+    }, &inputChoiceTimeline, survey.WithValidator(survey.Required))
+    checkingError(inputChoiceTimelineError)
 
-	inputSelectMode := []string{}
-	inputSelectModeError := survey.AskOne(&survey.MultiSelect{
-		Message: "Select Mode:",
-		Options: []string{"Like", "Comments", "Recast"},
-	}, &inputSelectMode, survey.WithValidator(survey.Required))
+    fmt.Println()
+    fmt.Println("[PROFILE] Getting my address...")
 
-	checkingError(inputSelectModeError)
+    myProfile, err := warpcast.GetMyProfile(myConfig.Accounts[inputSelectAccount])
+    if err != nil {
+        fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
+        return
+    }
 
-	inputChoiceTimeline := ""
-	inputChoiceTimelineError := survey.AskOne(&survey.Select{
-		Message: "Select Timeline:",
-		Options: []string{"Home", "All-Channels"},
-	}, &inputChoiceTimeline, survey.WithValidator(survey.Required))
+    fidStr := strconv.Itoa(myProfile.Result.State.User.Fid)
 
-	checkingError(inputChoiceTimelineError)
+    realAddress := ""
+    myAddress, err := warpcast.GetAddressVerified(myConfig.Accounts[inputSelectAccount], fidStr)
+    if err != nil {
+        fmt.Printf("[ADDRESS] [GETTER] ERROR : %s\n", err)
+        return
+    }
 
-	fmt.Println()
-	fmt.Println("[PROFILE] Getting my address...")
+    if len(myAddress.Result.Verifications) < 1 {
+        realAddress = "No Address"
+    } else {
+        realAddress = myAddress.Result.Verifications[0].Address
+    }
 
-	myProfile, err := warpcast.GetMyProfile(myConfig.Accounts[inputSelectAccount])
-	if err != nil {
-		fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
-		return
-	}
+    fmt.Printf("[PROFILE] [@%s] FID : %s | Address : %s\n", myProfile.Result.State.User.Username, fidStr, realAddress)
+    fmt.Println()
 
-	fidStr := strconv.Itoa(myProfile.Result.State.User.Fid)
+    var excludeHash []string
+    var lastTimestamp int64 = 0
 
-	realAddress := ""
-	myAddress, err := warpcast.GetAddressVerified(myConfig.Accounts[inputSelectAccount], fidStr)
-	if err != nil {
-		fmt.Printf("[ADDRESS] [GETTER] ERROR : %s\n", err)
-		return
-	}
+    for {
+        timeline, err := warpcast.GetFeedsItems(myConfig.Accounts[inputSelectAccount], inputChoiceTimeline, lastTimestamp, excludeHash)
+        if err != nil {
+            fmt.Printf("[TIMELINE][GETTER] ERROR : %s\n", err)
+            break
+        }
 
-	if len(myAddress.Result.Verifications) < 1 {
-		realAddress = "No Address"
-	} else {
-		realAddress = myAddress.Result.Verifications[0].Address
-	}
+        if lastTimestamp == 0 {
+            lastTimestamp = timeline.Result.LatestMainCastTimestamp
+        }
 
-	fmt.Printf("[PROFILE] [@%s] FID : %s | Address : %s\n", myProfile.Result.State.User.Username, fidStr, realAddress)
+        items := timeline.Result.Items
 
-	myPoints, err := degen.GetPoints(realAddress)
-	if err != nil {
-		fmt.Printf("[DEGEN] [POINTS] [GETTER] ERROR : %s\n", err)
-		return
-	}
+        if len(items) == 0 {
+            delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
+            time.Sleep(delayTimeline)
+            continue
+        }
 
-	realPoints := 0
-	if len(myPoints) != 0 {
-		realPoints, _ = strconv.Atoi(myPoints[0].Points)
-	}
+        for _, item := range items {
+            if !strings.Contains(strings.Join(excludeHash, ","), item.Cast.Hash[2:10]) {
+                excludeHash = append(excludeHash, item.Cast.Hash[2:10])
+            }
 
-	fmt.Printf("[DEGEN] [PROFILE] Points : %d ", realPoints)
+            fmt.Printf("[TIMELINE] [https://warpcast.com/%s/%s] ", item.Cast.Author.Username, item.Cast.Hash)
 
-	myAllowance, err := degen.GetTipAllowance(realAddress)
-	if err != nil {
-		fmt.Printf("[DEGEN] [ALLOWANCE] [GETTER] ERROR : %s\n", err)
-		return
-	}
+            if strings.Contains(strings.Join(inputSelectMode, ","), "Like") {
+                fmt.Printf("[LIKE]")
+                if item.Cast.ViewerContext.Reacted {
+                    fmt.Printf(" ALREADY ")
+                } else {
+                    _, err := warpcast.Like(myConfig.Accounts[inputSelectAccount], item.Cast.Hash)
+                    if err != nil {
+                        fmt.Printf(" ERROR : %s", err)
+                    } else {
+                        fmt.Printf(" SUCCESS")
+                    }
+                    fmt.Printf(" ")
+                    delayLike := time.Duration(myConfig.DelayLike) * time.Millisecond
+                    time.Sleep(delayLike)
+                }
+            }
 
-	remainingAllowance := 0
-	if len(myAllowance) != 0 {
-		remainingAllowance, _ = strconv.Atoi(myAllowance[0].RemainingAllowance)
-	}
+            if strings.Contains(strings.Join(inputSelectMode, ","), "Comments") {
+                fmt.Printf("[COMMENT]")
+                quotes, err := loadQuotes(myConfig.CustomCommentText)
+                if err != nil {
+                    fmt.Printf(" ERROR LOADING QUOTES: %s", err)
+                } else if len(quotes) > 0 {
+                    randIndex := rand.Intn(len(quotes))
+                    commentText := quotes[randIndex]
+                    _, err := warpcast.Comment(myConfig.Accounts[inputSelectAccount], item.Cast.Hash, commentText)
+                    if err != nil {
+                        fmt.Printf(" ERROR : %s", err)
+                    } else {
+                        fmt.Printf(" SUCCESS [%s]", commentText)
+                    }
+                } else {
+                    fmt.Printf(" SKIP NO QUOTES AVAILABLE")
+                }
+                fmt.Printf(" ")
+            }
 
-	remainingTipAllowance := 0
-	if len(myAllowance) != 0 {
-		remainingTipAllowance, _ = strconv.Atoi(myAllowance[0].TipAllowance)
-	}
+            if strings.Contains(strings.Join(inputSelectMode, ","), "Recast") {
+                fmt.Printf("[RECAST]")
+                if item.Cast.ViewerContext.Recast {
+                    fmt.Printf(" ALREADY ")
+                } else {
+                    _, err := warpcast.Recast(myConfig.Accounts[inputSelectAccount], item.Cast.Hash)
+                    if err != nil {
+                        fmt.Printf(" ERROR : %s", err)
+                    } else {
+                        fmt.Printf(" SUCCESS")
+                    }
+                    fmt.Printf(" ")
+                    delayRecast := time.Duration(myConfig.DelayRecast) * time.Millisecond
+                    time.Sleep(delayRecast)
+                }
+            }
 
-	fmt.Printf("| Allowance : %d | Remaining Allowance : %d\n", remainingTipAllowance, remainingAllowance)
+            fmt.Printf("\n")
+        }
 
-	fmt.Println()
+        fmt.Println()
+        fmt.Printf("\tWaiting for %ds to get new feeds...\n", myConfig.DelayTimeline/1000)
+        fmt.Println()
 
-	var excludeHash []string
-	var lastTimestamp int64 = 0
-
-	for {
-		timeline, err := warpcast.GetFeedsItems(myConfig.Accounts[inputSelectAccount], inputChoiceTimeline, lastTimestamp, excludeHash)
-		if err != nil {
-			fmt.Printf("[TIMELINE][GETTER] ERROR : %s\n", err)
-			break
-		}
-
-		if lastTimestamp == 0 {
-			lastTimestamp = timeline.Result.LatestMainCastTimestamp
-		}
-
-		items := timeline.Result.Items
-
-		if len(items) == 0 {
-			delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
-			time.Sleep(delayTimeline)
-			continue
-		}
-
-		for _, item := range items {
-			if !strings.Contains(strings.Join(excludeHash, ","), item.Cast.Hash[2:10]) {
-				excludeHash = append(excludeHash, item.Cast.Hash[2:10])
-			}
-
-			fmt.Printf("[TIMELINE] [https://warpcast.com/%s/%s] ", item.Cast.Author.Username, item.Cast.Hash)
-
-			if strings.Contains(strings.Join(inputSelectMode, ","), "Like") {
-				fmt.Printf("[LIKE]")
-
-				if item.Cast.ViewerContext.Reacted {
-					fmt.Printf(" ALREADY ")
-				} else {
-					_, err := warpcast.Like(myConfig.Accounts[inputSelectAccount], item.Cast.Hash)
-					if err != nil {
-						fmt.Printf(" ERROR : %s", err)
-					} else {
-						fmt.Printf(" SUCCESS")
-					}
-					fmt.Printf(" ")
-
-					delayLike := time.Duration(myConfig.DelayLike) * time.Millisecond
-					time.Sleep(delayLike)
-				}
-			}
-
-			if strings.Contains(strings.Join(inputSelectMode, ","), "Comments") {
-				fmt.Printf("[COMMENT]")
-
-				commentText := ""
-				if strings.Contains(item.Cast.Text, "$DEGEN") {
-					randomThreeDigit := rand.Intn(remainingAllowance)
-					commentText = fmt.Sprintf("%d $DEGEN", randomThreeDigit)
-				}
-
-				if commentText != "" {
-					if remainingAllowance > 0 {
-						_, err := warpcast.Comment(myConfig.Accounts[inputSelectAccount], item.Cast.Hash, commentText)
-						if err != nil {
-							fmt.Printf(" ERROR : %s", err)
-						} else {
-							fmt.Printf(" SUCCESS [%s]", commentText)
-						}
-					} else {
-						fmt.Printf(" SKIP NO ALLOWANCE")
-					}
-				} else {
-					fmt.Printf(" SKIP NO $DEGEN TEXT IN POST")
-				}
-
-				fmt.Printf(" ")
-			}
-
-			if strings.Contains(strings.Join(inputSelectMode, ","), "Recast") {
-				fmt.Printf("[RECAST]")
-
-				if item.Cast.ViewerContext.Recast {
-					fmt.Printf(" ALREADY ")
-				} else {
-					_, err := warpcast.Recast(myConfig.Accounts[inputSelectAccount], item.Cast.Hash)
-					if err != nil {
-						fmt.Printf(" ERROR : %s", err)
-					} else {
-						fmt.Printf(" SUCCESS")
-					}
-
-					fmt.Printf(" ")
-
-					delayRecast := time.Duration(myConfig.DelayRecast) * time.Millisecond
-					time.Sleep(delayRecast)
-				}
-			}
-
-			fmt.Printf("\n")
-		}
-
-		fmt.Println()
-		fmt.Printf("\tWaiting for %ds to get new feeds...\n", myConfig.DelayTimeline/1000)
-		fmt.Println()
-
-		delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
-		time.Sleep(delayTimeline)
-	}
+        delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
+        time.Sleep(delayTimeline)
+    }
 }
 
 func followTarget() {
-	fmt.Print("\033[H\033[2J")
+    fmt.Print("\033[H\033[2J")
+    fmt.Println("Follow Following/Followers Target")
+    fmt.Println()
 
-	fmt.Println("Follow Following/Followers Target")
-	fmt.Println()
+    inputSelectAccount := 0
+    inputSelectAccountError := survey.AskOne(&survey.Select{
+        Message: "Select Account:",
+        Options: myConfig.Accounts,
+    }, &inputSelectAccount, survey.WithValidator(survey.Required))
+    checkingError(inputSelectAccountError)
 
-	inputSelectAccount := 0
-	inputSelectAccountError := survey.AskOne(&survey.Select{
-		Message: "Select Account:",
-		Options: myConfig.Accounts,
-	}, &inputSelectAccount, survey.WithValidator(survey.Required))
+    inputTargetUsername := ""
+    inputTargetUsernameError := survey.AskOne(&survey.Input{
+        Message: "Target Username:",
+    }, &inputTargetUsername, survey.WithValidator(survey.Required))
+    checkingError(inputTargetUsernameError)
 
-	checkingError(inputSelectAccountError)
+    inputChoiceMode := ""
+    inputChoiceModeError := survey.AskOne(&survey.Select{
+        Message: "Select Mode:",
+        Options: []string{"Following", "Followers"},
+    }, &inputChoiceMode, survey.WithValidator(survey.Required))
+    checkingError(inputChoiceModeError)
 
-	inputTargetUsername := ""
-	inputTargetUsernameError := survey.AskOne(&survey.Input{
-		Message: "Target Username:",
-	}, &inputTargetUsername, survey.WithValidator(survey.Required))
+    fmt.Println()
+    fmt.Printf("[%s] Getting Data of @%s...\n", inputChoiceMode, inputTargetUsername)
 
-	checkingError(inputTargetUsernameError)
+    profile, err := warpcast.GetProfile(myConfig.Accounts[inputSelectAccount], inputTargetUsername)
+    if err != nil {
+        fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
+        return
+    }
 
-	inputChoiceMode := ""
-	inputChoiceModeError := survey.AskOne(&survey.Select{
-		Message: "Select Mode:",
-		Options: []string{"Following", "Followers"},
-	}, &inputChoiceMode, survey.WithValidator(survey.Required))
+    fmt.Printf("[%s] [@%s] FID : %d | Followers : %d | Following : %d\n", inputChoiceMode, inputTargetUsername, profile.Result.User.Fid, profile.Result.User.FollowerCount, profile.Result.User.FollowingCount)
+    fmt.Println()
 
-	checkingError(inputChoiceModeError)
+    var cursor string = ""
+    for {
+        fidStr := strconv.Itoa(profile.Result.User.Fid)
+        tryToGetFollowersOrFollowing, err := warpcast.GetProfileInformation(strings.ToLower(inputChoiceMode), myConfig.Accounts[inputSelectAccount], fidStr, cursor)
+        if err != nil {
+            fmt.Printf("[GET DATA][%s] FAILED TO GET DATA | ERROR : %s\n", inputChoiceMode, err)
+            continue
+        }
 
-	fmt.Println()
+        for index, item := range tryToGetFollowersOrFollowing.Result.Users {
+            fidTarget := strconv.Itoa(item.Fid)
+            fmt.Printf("%d. [%s] [@%s] FID : %s", index, inputChoiceMode, item.Username, fidTarget)
+            if item.ViewerContext.Following {
+                fmt.Printf(" SKIP YOU ALREADY FOLLOW !\n")
+                continue
+            }
+            _, err := warpcast.Follow(myConfig.Accounts[inputSelectAccount], fidTarget)
+            if err != nil {
+                fmt.Printf(" ERROR : %s\n", err)
+            } else {
+                fmt.Printf(" SUCCESS\n")
+            }
+            delayFollow := time.Duration(myConfig.DelayFollow) * time.Millisecond
+            time.Sleep(delayFollow)
+        }
 
-	fmt.Printf("[%s] Getting Data of @%s...\n", inputChoiceMode, inputTargetUsername)
+        if tryToGetFollowersOrFollowing.Next.Cursor == "" {
+            break
+        }
 
-	profile, err := warpcast.GetProfile(myConfig.Accounts[inputSelectAccount], inputTargetUsername)
-	if err != nil {
-		fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
-		return
-	}
-
-	fmt.Printf("[%s] [@%s] FID : %d | Followers : %d | Following : %d\n", inputChoiceMode, inputTargetUsername, profile.Result.User.Fid, profile.Result.User.FollowerCount, profile.Result.User.FollowingCount)
-	fmt.Println()
-
-	var cursor string = ""
-	for {
-		fidStr := strconv.Itoa(profile.Result.User.Fid)
-		tryToGetFollowersOrFollowing, err := warpcast.GetProfileInformation(strings.ToLower(inputChoiceMode), myConfig.Accounts[inputSelectAccount], fidStr, cursor)
-		if err != nil {
-			fmt.Printf("[GET DATA][%s] FAILED TO GET DATA | ERROR : %s\n", inputChoiceMode, err)
-			continue
-		}
-
-		for index, item := range tryToGetFollowersOrFollowing.Result.Users {
-			fidTarget := strconv.Itoa(item.Fid)
-			fmt.Printf("%d. [%s] [@%s] FID : %s", index, inputChoiceMode, item.Username, fidTarget)
-
-			if item.ViewerContext.Following {
-				fmt.Printf(" SKIP YOU ALREADY FOLLOW !\n")
-				continue
-			}
-
-			_, err := warpcast.Follow(myConfig.Accounts[inputSelectAccount], fidTarget)
-			if err != nil {
-				fmt.Printf(" ERROR : %s\n", err)
-			} else {
-				fmt.Printf(" SUCCESS\n")
-			}
-
-			delayFollow := time.Duration(myConfig.DelayFollow) * time.Millisecond
-			time.Sleep(delayFollow)
-		}
-
-		if tryToGetFollowersOrFollowing.Next.Cursor == "" {
-			break
-		}
-
-		cursor = tryToGetFollowersOrFollowing.Next.Cursor
-
-		fmt.Println()
-		fmt.Printf("\tWaiting for %ds to get new feeds...\n", myConfig.DelayTimeline/1000)
-		fmt.Println()
-
-		delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
-		time.Sleep(delayTimeline)
-	}
+        cursor = tryToGetFollowersOrFollowing.Next.Cursor
+        fmt.Println()
+        fmt.Printf("\tWaiting for %ds to get new feeds...\n", myConfig.DelayTimeline/1000)
+        fmt.Println()
+        delayTimeline := time.Duration(myConfig.DelayTimeline) * time.Millisecond
+        time.Sleep(delayTimeline)
+    }
 }
 
 func unfollowNotFB() {
-	fmt.Print("\033[H\033[2J")
+    fmt.Print("\033[H\033[2J")
+    fmt.Println("Unfollow Who Not Follow Back")
+    fmt.Println()
 
-	fmt.Println("Unfollow Who Not Follow Back")
-	fmt.Println()
+    inputSelectAccount := 0
+    inputSelectAccountError := survey.AskOne(&survey.Select{
+        Message: "Select Account:",
+        Options: myConfig.Accounts,
+    }, &inputSelectAccount, survey.WithValidator(survey.Required))
+    checkingError(inputSelectAccountError)
 
-	inputSelectAccount := 0
-	inputSelectAccountError := survey.AskOne(&survey.Select{
-		Message: "Select Account:",
-		Options: myConfig.Accounts,
-	}, &inputSelectAccount, survey.WithValidator(survey.Required))
+    fmt.Println()
+    fmt.Printf("[PROFILE] Getting following data\n")
 
-	checkingError(inputSelectAccountError)
+    profile, err := warpcast.GetMyProfile(myConfig.Accounts[inputSelectAccount])
+    if err != nil {
+        fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
+        return
+    }
 
-	fmt.Println()
-	fmt.Printf("[PROFILE] Getting following data\n")
+    fidStr := strconv.Itoa(profile.Result.State.User.Fid)
 
-	profile, err := warpcast.GetMyProfile(myConfig.Accounts[inputSelectAccount])
-	if err != nil {
-		fmt.Printf("[PROFILE][GETTER] ERROR : %s\n", err)
-		return
-	}
+    fmt.Printf("[%s] [@%s] FID : %s | Followers : %d | Following : %d\n", "PROFILE", profile.Result.State.User.Username, fidStr, profile.Result.State.User.FollowerCount, profile.Result.State.User.FollowingCount)
+    fmt.Println()
 
-	fidStr := strconv.Itoa(profile.Result.State.User.Fid)
+    var cursor string = ""
+    for {
+        tryToGetFollowing, err := warpcast.GetProfileInformation("following", myConfig.Accounts[inputSelectAccount], fidStr, cursor)
+        if err != nil {
+            fmt.Printf("[GET DATA][FOLLOWING] FAILED TO GET DATA | ERROR : %s\n", err)
+            continue
+        }
+        for _, item := range tryToGetFollowing.Result.Users {
+            fidTarget := strconv.Itoa(item.Fid)
+            fmt.Printf("[UNFOLLOW] [@%s] FID : %s", item.Username, fidTarget)
+            if item.ViewerContext.FollowedBy {
+                fmt.Printf(" SKIP THEY FOLLOW YOU !\n")
+                continue
+            }
+            if strings.Contains(strings.Join(myConfig.IgnoreUsers, ","), strings.ToLower(item.Username)) {
+                fmt.Printf(" SKIP IGNORED USER\n")
+                continue
+            }
+            _, err := warpcast.Unfollow(myConfig.Accounts[inputSelectAccount], fidTarget)
+            if err != nil {
+                fmt.Printf(" ERROR : %s\n", err.Error())
+            } else {
+                fmt.Printf(" SUCCESS\n")
+            }
+            delayUnfollow := time.Duration(myConfig.DelayUnfollow) * time.Millisecond
+            time.Sleep(delayUnfollow)
+        }
 
-	fmt.Printf("[%s] [@%s] FID : %s | Followers : %d | Following : %d\n", "PROFILE", profile.Result.State.User.Username, fidStr, profile.Result.State.User.FollowerCount, profile.Result.State.User.FollowingCount)
-	fmt.Println()
+        if tryToGetFollowing.Next.Cursor == "" {
+            break
+        }
 
-	var cursor string = ""
-	for {
-		tryToGetFollowing, err := warpcast.GetProfileInformation("following", myConfig.Accounts[inputSelectAccount], fidStr, cursor)
-		if err != nil {
-			fmt.Printf("[GET DATA][FOLLOWING] FAILED TO GET DATA | ERROR : %s\n", err)
-			continue
-		}
-		for _, item := range tryToGetFollowing.Result.Users {
-			fidTarget := strconv.Itoa(item.Fid)
-			fmt.Printf("[UNFOLLOW] [@%s] FID : %s", item.Username, fidTarget)
-
-			if item.ViewerContext.FollowedBy {
-				fmt.Printf(" SKIP THEY FOLLOW YOU !\n")
-				continue
-			}
-
-			// if item.Username in myConfig.IgnoreUsers
-			if strings.Contains(strings.Join(myConfig.IgnoreUsers, ","), strings.ToLower(item.Username)) {
-				fmt.Printf(" SKIP IGNORED USER\n")
-				continue
-			}
-
-			_, err := warpcast.Unfollow(myConfig.Accounts[inputSelectAccount], fidTarget)
-			if err != nil {
-				fmt.Printf(" ERROR : %s\n", err.Error())
-			} else {
-				fmt.Printf(" SUCCESS\n")
-			}
-
-			delayUnfollow := time.Duration(myConfig.DelayUnfollow) * time.Millisecond
-			time.Sleep(delayUnfollow)
-		}
-
-		if tryToGetFollowing.Next.Cursor == "" {
-			break
-		}
-
-		cursor = tryToGetFollowing.Next.Cursor
-	}
+        cursor = tryToGetFollowing.Next.Cursor
+    }
 }
 
 func main() {
-	fmt.Println("Warpcast Tools")
-	fmt.Println("Author : @x0xdead / Wildaann")
-	fmt.Println()
-	fmt.Println("1. Multi Accounts Management")
-	fmt.Println("2. Follow Target (Followers/Following)")
-	fmt.Println("3. Auto Like, Comment, and Recast Timeline (Home/All-Channels)")
-	fmt.Println("4. Unfollow Who Not Follow Back")
-	fmt.Println()
+    fmt.Println("Warpcast Tools")
+    fmt.Println("Author : @x0xdead / Wildaann")
+    fmt.Println()
+    fmt.Println("1. Multi Accounts Management")
+    fmt.Println("2. Follow Target (Followers/Following)")
+    fmt.Println("3. Auto Like, Comment, and Recast Timeline (Home/All-Channels)")
+    fmt.Println("4. Unfollow Who Not Follow Back")
+    fmt.Println()
 
-	inputMenu := ""
-	inputMenuError := survey.AskOne(&survey.Input{
-		Message: "Select Menu:",
-	}, &inputMenu, survey.WithValidator(survey.Required))
+    inputMenu := ""
+    inputMenuError := survey.AskOne(&survey.Input{
+        Message: "Select Menu:",
+    }, &inputMenu, survey.WithValidator(survey.Required))
+    checkingError(inputMenuError)
 
-	checkingError(inputMenuError)
-
-	switch inputMenu {
-	case "1":
-		multiAccountsManagement()
-		break
-	case "2":
-		followTarget()
-		break
-	case "3":
-		autoTimeline()
-		break
-	case "4":
-		unfollowNotFB()
-		break
-	}
+    switch inputMenu {
+    case "1":
+        multiAccountsManagement()
+    case "2":
+        followTarget()
+    case "3":
+        autoTimeline()
+    case "4":
+        unfollowNotFB()
+    }
 }
